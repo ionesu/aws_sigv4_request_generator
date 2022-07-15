@@ -1,3 +1,4 @@
+import os
 import hmac
 import hashlib
 import datetime
@@ -27,6 +28,11 @@ class AWSSigV4RequestGenerator(AuthBase):
 
         if self.aws_service is None:
             raise KeyError("Service is required")
+
+        if self.aws_access_key_id is None or self.aws_secret_access_key is None:
+            self.aws_access_key_id = os.environ.get('AWS_ACCESS_KEY_ID')
+            self.aws_secret_access_key = os.environ.get('AWS_SECRET_ACCESS_KEY')
+            self.aws_session_token = os.environ.get('AWS_SESSION_TOKEN') or os.environ.get('AWS_SECURITY_TOKEN')
 
         if self.aws_access_key_id is None or self.aws_secret_access_key is None:
             raise KeyError("AWS Access Key ID and Secret Access Key are required")
@@ -170,6 +176,6 @@ class AWSSigV4RequestGenerator(AuthBase):
         signing_key = self.get_signature_key()
         signature = hmac.new(signing_key, string_to_sign.encode('utf-8'), hashlib.sha256).hexdigest()
         authorization_header = "AWS4-HMAC-SHA256 Credential={}/{}, SignedHeaders={}, Signature={}".format(
-            self.aws_access_key_id, credential_scope, signed_headers, signature)
+                self.aws_access_key_id, credential_scope, signed_headers, signature)
 
         return authorization_header
