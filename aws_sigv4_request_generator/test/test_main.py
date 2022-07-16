@@ -3,7 +3,7 @@ import unittest
 
 from unittest.mock import Mock, patch
 from aws_sigv4_request_generator.aws_sigv4 import AWSSigV4RequestGenerator
-
+from urllib.parse import quote, urlparse
 
 class TestAWSSigV4RequestGenerator(unittest.TestCase):
 
@@ -112,41 +112,58 @@ class TestAWSSigV4RequestGenerator(unittest.TestCase):
         self.assertEqual(result, expected_result)
 
 
-    def test_get_canonical_data(self):
-        expected_result = ('',
-                           '/',
-                           'host:search-service.us-east-1.es.amazonaws.com\n'
-                           'x-amz-date:20220715T212200Z\n'
-                           'x-amz-security-token:YOUR_SESSION_TOKEN\n')
-        self.auth.amzdate = '20220715T212200Z'
+    def test_get_canonical_uri(self):
+        expected_result = '/'
+        mock_parse_result = Mock(scheme='https',
+                                 netloc='some-es.us-east-1.es.amazonaws.com:80',
+                                 path='/',
+                                 params='',
+                                 query='',
+                                 fragment='')
 
-        mock_request = Mock()
-        mock_request.url = 'https://some-es.us-east-1.es.amazonaws.com:80/'
-        mock_request.method = "GET"
-        mock_request.body = 'foo=bar'
-        mock_request.headers = {}
-
-        result = self.auth.get_canonical_data(mock_request)
-
+        result = self.auth.get_canonical_uri(mock_parse_result)
         self.assertEqual(result, expected_result)
 
 
-    def test_get_canonical_data__with_uri_and_querystring(self):
-        expected_result = ('foo=go&loo=po',
-                           '/endpoint',
-                           'host:search-service.us-east-1.es.amazonaws.com\n'
-                           'x-amz-date:20220715T212200Z\n'
-                           'x-amz-security-token:YOUR_SESSION_TOKEN\n')
+    def test_get_canonical_uri__with_pah(self):
+        expected_result = '/endpoint'
+        mock_parse_result = Mock(scheme='https',
+                                 netloc='some-es.us-east-1.es.amazonaws.com:80',
+                                 path='/endpoint',
+                                 params='',
+                                 query='',
+                                 fragment='')
+
+        result = self.auth.get_canonical_uri(mock_parse_result)
+        self.assertEqual(result, expected_result)
+
+
+    def test_get_canonical_querystring(self):
+        expected_result = 'foo=go&loo=po'
+        mock_parse_result = Mock(scheme='https',
+                                 netloc='some-es.us-east-1.es.amazonaws.com:80',
+                                 path='/endpoint',
+                                 params='',
+                                 query='foo=go&loo=po',
+                                 fragment='')
+
+        result = self.auth.get_canonical_querystring(mock_parse_result)
+        self.assertEqual(result, expected_result)
+
+
+    def test_get_canonical_headers(self):
+        expected_result = 'host:search-service.us-east-1.es.amazonaws.com\nx-amz-date:20220715T212200Z\n' \
+                          'x-amz-security-token:YOUR_SESSION_TOKEN\n'
+
         self.auth.amzdate = '20220715T212200Z'
+        mock_parse_result = Mock(scheme='https',
+                                 netloc='some-es.us-east-1.es.amazonaws.com:80',
+                                 path='/endpoint',
+                                 params='',
+                                 query='foo=go&loo=po',
+                                 fragment='')
 
-        mock_request = Mock()
-        mock_request.url = 'https://some-es.us-east-1.es.amazonaws.com:80/endpoint?foo=go&loo=po'
-        mock_request.method = "GET"
-        mock_request.body = 'foo=bar'
-        mock_request.headers = {}
-
-        result = self.auth.get_canonical_data(mock_request)
-
+        result = self.auth.get_canonical_headers(mock_parse_result)
         self.assertEqual(result, expected_result)
 
 
