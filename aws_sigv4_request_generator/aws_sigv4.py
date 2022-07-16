@@ -61,7 +61,12 @@ class AWSSigV4RequestGenerator(AuthBase):
         signature version 4 signing process.
         """
 
-        canonical_querystring, canonical_uri, canonical_headers = self.get_canonical_data(request)
+        parsed_url = urlparse(request.url)
+
+        canonical_querystring = self.get_canonical_querystring(parsed_url)
+        canonical_uri = self.get_canonical_uri(parsed_url)
+        canonical_headers = self.get_canonical_headers(parsed_url)
+
         payload_hash = self.get_payload_hash(request)
         signed_headers = 'host;x-amz-date;x-amz-security-token' if self.aws_session_token else 'host;x-amz-date'
 
@@ -85,51 +90,6 @@ class AWSSigV4RequestGenerator(AuthBase):
     @staticmethod
     def sign(key, msg):
         return hmac.new(key, msg.encode('utf-8'), hashlib.sha256).digest()
-
-
-    def get_signature_key(self):
-        """
-        Key derivation functions. See:
-        http://docs.aws.amazon.com/general/latest/gr/signature-v4-examples.html#signature-v4-examples-python
-        """
-        k_date = self.sign(('AWS4' + self.aws_secret_access_key).encode('utf-8'), self.datestamp)
-        k_region = self.sign(k_date, self.aws_region)
-        k_service = self.sign(k_region, self.aws_service)
-        k_signing = self.sign(k_service, 'aws4_request')
-
-        return k_signing
-
-
-    def get_canonical_data(self, request):
-        """
-        Create the canonical query string. According to AWS, by the
-        end of this function our query string values must
-        be URL-encoded (space=%20) and the parameters must be sorted
-        by name.
-        Create canonical URI--the part of the URI from domain to query
-        string (use '/' if no path)
-        Create the canonical headers and signed headers. Header names
-        must be trimmed and lowercase, and sorted in code point order from
-        low to high. Note that there is a trailing \n.
-        """
-
-        parsed_url = urlparse(request.url)
-        querystring = dict(map(lambda i: i.split('='), parsed_url.query.split('&'))) if len(
-                parsed_url.query) else dict()
-        canonical_querystring = "&".join(map(lambda parsed_url: "=".join(parsed_url), sorted(querystring.items())))
-
-        # safe chars adapted from boto's use of urllib.parse.quote
-        # https://github.com/boto/boto/blob/d9e5cfe900e1a58717e393c76a6e3580305f217a/boto/auth.py#L393
-        canonical_uri = quote(parsed_url.path if parsed_url.path else '/', safe='/-_.~')
-        host = self.aws_host or request.headers.get('Host') or parsed_url.hostname
-
-        # We check if we get host from kwargs than in request headers and the last chance to hostname of parsed url
-        canonical_headers = ('host:' + host + '\n' + 'x-amz-date:' + self.amzdate + '\n')
-
-        if self.aws_session_token:
-            canonical_headers += 'x-amz-security-token:' + self.aws_session_token + '\n'
-
-        return canonical_querystring, canonical_uri, canonical_headers
 
 
     @staticmethod
@@ -163,6 +123,64 @@ class AWSSigV4RequestGenerator(AuthBase):
                 payload_hash = hashlib.sha256(b'').hexdigest()
 
         return payload_hash
+
+
+    @staticmethod
+    def get_canonical_querystring(parsed_url):
+        """
+        Create the canonical query string. According to AWS, by the
+        end of this function our query string values must
+        be URL-encoded (space=%20) and the parameters must be sorted
+        by name.
+        """
+
+        querystring = dict(map(lambda i: i.split('='), parsed_url.query.split('&'))) if len(
+                parsed_url.query) else dict()
+        canonical_querystring = "&".join(map(lambda parsed_url: "=".join(parsed_url), sorted(querystring.items())))
+
+        return canonical_querystring
+
+
+    @staticmethod
+    def get_canonical_uri(parsed_url):
+        """
+        Create canonical URI--the part of the URI from domain to query
+        string (use '/' if no path)
+        """
+
+        canonical_uri = quote(parsed_url.path if parsed_url.path else '/', safe='/-_.~')
+
+        return canonical_uri
+
+
+    def get_signature_key(self):
+        """
+        Key derivation functions. See:
+        http://docs.aws.amazon.com/general/latest/gr/signature-v4-examples.html#signature-v4-examples-python
+        """
+        k_date = self.sign(('AWS4' + self.aws_secret_access_key).encode('utf-8'), self.datestamp)
+        k_region = self.sign(k_date, self.aws_region)
+        k_service = self.sign(k_region, self.aws_service)
+        k_signing = self.sign(k_service, 'aws4_request')
+
+        return k_signing
+
+
+    def get_canonical_headers(self, parsed_url):
+        """
+        Create the canonical headers and signed headers. Header names
+        must be trimmed and lowercase, and sorted in code point order from
+        low to high. Note that there is a trailing \n.
+        """
+
+        # We check if we get host from kwargs than hostname of parsed url
+        host = self.aws_host or parsed_url.hostname
+        canonical_headers = ('host:' + host + '\n' + 'x-amz-date:' + self.amzdate + '\n')
+
+        if self.aws_session_token:
+            canonical_headers += 'x-amz-security-token:' + self.aws_session_token + '\n'
+
+        return canonical_headers
 
 
     def get_authorization_header(self, canonical_request, signed_headers):
