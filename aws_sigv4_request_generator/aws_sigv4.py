@@ -1,6 +1,7 @@
 import os
 import hmac
 import hashlib
+import logging
 import datetime
 
 from requests.auth import AuthBase
@@ -30,12 +31,17 @@ class AWSSigV4RequestGenerator(AuthBase):
             raise KeyError("Service is required")
 
         if self.aws_access_key_id is None or self.aws_secret_access_key is None:
+            logging.debug("Checking environment for credentials")
             self.aws_access_key_id = os.environ.get('AWS_ACCESS_KEY_ID')
             self.aws_secret_access_key = os.environ.get('AWS_SECRET_ACCESS_KEY')
             self.aws_session_token = os.environ.get('AWS_SESSION_TOKEN') or os.environ.get('AWS_SECURITY_TOKEN')
 
         if self.aws_access_key_id is None or self.aws_secret_access_key is None:
             raise KeyError("AWS Access Key ID and Secret Access Key are required")
+
+        if self.aws_region is None:
+            logging.debug("Checking environment for region")
+            self.aws_region = os.environ.get('AWS_DEFAULT_REGION')
 
         if self.aws_region is None:
             raise KeyError("Region is required")
@@ -62,6 +68,7 @@ class AWSSigV4RequestGenerator(AuthBase):
         """
 
         parsed_url = urlparse(request.url)
+        logging.debug("Request URL: %s", parsed_url)
 
         canonical_querystring = self.get_canonical_querystring(parsed_url)
         canonical_uri = self.get_canonical_uri(parsed_url)
@@ -72,6 +79,7 @@ class AWSSigV4RequestGenerator(AuthBase):
 
         canonical_request = '\n'.join([request.method, canonical_uri, canonical_querystring,
                                        canonical_headers, signed_headers, payload_hash])
+        logging.debug("Canonical Request: '%s'", canonical_request)
 
         authorization_header = self.get_authorization_header(canonical_request, signed_headers)
 
@@ -83,6 +91,8 @@ class AWSSigV4RequestGenerator(AuthBase):
 
         if self.aws_session_token:
             request.headers['x-amz-security-token'] = self.aws_session_token
+
+        logging.debug("Generated Request Headers: %s", headers)
 
         return headers
 
@@ -101,6 +111,7 @@ class AWSSigV4RequestGenerator(AuthBase):
         date_utc_now = datetime.datetime.utcnow()
         amzdate = date_utc_now.strftime('%Y%m%dT%H%M%SZ')
         datestamp = date_utc_now.strftime('%Y%m%d')
+        logging.debug("Starting authentication with amzdate=%s and datestamp=%s", amzdate, datestamp)
 
         return amzdate, datestamp
 
@@ -120,6 +131,8 @@ class AWSSigV4RequestGenerator(AuthBase):
 
             else:
                 payload = b''
+
+        logging.debug("Request Body: <bytes> %s", payload)
 
         return hashlib.sha256(payload).hexdigest()
 
@@ -190,8 +203,12 @@ class AWSSigV4RequestGenerator(AuthBase):
         credential_scope = '/'.join([self.datestamp, self.aws_region, self.aws_service, 'aws4_request'])
         string_to_sign = '\n'.join(['AWS4-HMAC-SHA256', self.amzdate,
                                     credential_scope, hashlib.sha256(canonical_request.encode('utf-8')).hexdigest()])
+        logging.debug("String-to-Sign: %s", string_to_sign)
+
         signing_key = self.get_signature_key()
         signature = hmac.new(signing_key, string_to_sign.encode('utf-8'), hashlib.sha256).hexdigest()
+        logging.debug("Signature: %s", signature)
+
         authorization_header = "AWS4-HMAC-SHA256 Credential={}/{}, SignedHeaders={}, Signature={}".format(
                 self.aws_access_key_id, credential_scope, signed_headers, signature)
 
