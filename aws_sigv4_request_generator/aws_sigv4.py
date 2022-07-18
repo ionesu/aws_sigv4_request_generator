@@ -112,17 +112,16 @@ class AWSSigV4RequestGenerator(AuthBase):
         """
 
         if request.method == 'GET':
-            payload_hash = hashlib.sha256(''.encode('utf-8')).hexdigest()
+            payload = ''.encode('utf-8')
+
         else:
             if request.body:
-                if isinstance(request.body, bytes):
-                    payload_hash = hashlib.sha256(request.body).hexdigest()
-                else:
-                    payload_hash = hashlib.sha256(request.body.encode('utf-8')).hexdigest()
-            else:
-                payload_hash = hashlib.sha256(b'').hexdigest()
+                payload = request.body if isinstance(request.body, bytes) else request.body.encode('utf-8')
 
-        return payload_hash
+            else:
+                payload = b''
+
+        return hashlib.sha256(payload).hexdigest()
 
 
     @staticmethod
