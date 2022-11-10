@@ -5,7 +5,11 @@ This package allows you to add the authorization headers to your request require
 
 Tested with python 3.9
 
-# Usage
+## Installation
+
+```pip install aws-sigv4-request-generator```
+
+## Usage
 
 ```python
 import requests
